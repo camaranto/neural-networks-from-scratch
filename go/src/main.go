@@ -35,22 +35,69 @@ type neuralNetConfig struct {
 	learningRate  float64
 }
 
+func main() {
+
+	// Form the training matrices.
+	inputs, labels := makeInputsAndLabels("data/train.csv")
+
+	// Define our network architecture and learning parameters.
+	config := neuralNetConfig{
+		inputNeurons:  4,
+		outputNeurons: 3,
+		hiddenNeurons: 3,
+		numEpochs:     5000,
+		learningRate:  0.3,
+	}
+
+	// Train the neural network.
+	network := newNetwork(config)
+	if err := network.train(inputs, labels); err != nil {
+		log.Fatal(err)
+	}
+
+	// Form the testing matrices.
+	testInputs, testLabels := makeInputsAndLabels("data/test.csv")
+
+	// Make the predictions using the trained model.
+	predictions, err := network.predict(testInputs)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Calculate the accuracy of our model.
+	var truePosNeg int
+	numPreds, _ := predictions.Dims()
+	for i := 0; i < numPreds; i++ {
+
+		// Get the label.
+		labelRow := mat.Row(nil, i, testLabels)
+		var prediction int
+		for idx, label := range labelRow {
+			if label == 1.0 {
+				prediction = idx
+				break
+			}
+		}
+
+		// Accumulate the true positive/negative count.
+		if predictions.At(i, prediction) == floats.Max(mat.Row(nil, i, predictions)) {
+			truePosNeg++
+		}
+	}
+
+	// Calculate the accuracy (subset accuracy).
+	accuracy := float64(truePosNeg) / float64(numPreds)
+
+	// Output the Accuracy value to standard out.
+	fmt.Printf("\nAccuracy = %0.2f\n\n", accuracy)
+}
+
+// NewNetwork initializes a new neural network.
 func newNetwork(config neuralNetConfig) *neuralNet {
 	return &neuralNet{config: config}
 }
 
-// sigmoid implements the sigmoid function
-// for use in activation functions.
-func sigmoid(x float64) float64 {
-	return 1.0 / (1.0 + math.Exp(-x))
-}
-
-// sigmoidPrime implements the derivative
-// of the sigmoid function for backpropagation.
-func sigmoidPrime(x float64) float64 {
-	return sigmoid(x) * (1.0 - sigmoid(x))
-}
-
+// train trains a neural network using backpropagation.
 func (nn *neuralNet) train(x, y *mat.Dense) error {
 
 	// Initialize biases/weights.
@@ -95,6 +142,7 @@ func (nn *neuralNet) train(x, y *mat.Dense) error {
 	return nil
 }
 
+// backpropagate completes the backpropagation method.
 func (nn *neuralNet) backpropagate(x, y, wHidden, bHidden, wOut, bOut, output *mat.Dense) error {
 
 	// Loop over the number of epochs utilizing
@@ -164,8 +212,8 @@ func (nn *neuralNet) backpropagate(x, y, wHidden, bHidden, wOut, bOut, output *m
 	return nil
 }
 
-// prediction using a trained network
-
+// predict makes a prediction based on a trained
+// neural network.
 func (nn *neuralNet) predict(x *mat.Dense) (*mat.Dense, error) {
 
 	// Check to make sure that our neuralNet value
@@ -199,59 +247,21 @@ func (nn *neuralNet) predict(x *mat.Dense) (*mat.Dense, error) {
 	return output, nil
 }
 
-func makeInputsAndLabels(filename string) (*mat.Dense, *mat.Dense) {
-
-	f, err := os.Open(filename)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer f.Close()
-
-	reader := csv.NewReader(f)
-	reader.FieldsPerRecord = 7
-
-	rawCSVData, err := reader.ReadAll()
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	inputsData := make([]float64, 4*len(rawCSVData))
-	labelsData := make([]float64, 4*len(rawCSVData))
-
-	var inputsIndex int
-	var labelsIndex int
-
-	for idx, record := range rawCSVData {
-
-		if idx == 0 {
-			continue
-		}
-
-		for i, val := range record {
-
-			parsedVal, err := strconv.ParseFloat(val, 64)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if i == 4 || i == 5 || i == 6 {
-				labelsData[labelsIndex] = parsedVal
-				labelsIndex++
-				continue
-			}
-
-			inputsData[inputsIndex] = parsedVal
-			inputsIndex++
-		}
-
-	}
-	inputs := mat.NewDense(len(rawCSVData), 4, inputsData)
-	labels := mat.NewDense(len(rawCSVData), 4, labelsData)
-	return inputs, labels
+// sigmoid implements the sigmoid function
+// for use in activation functions.
+func sigmoid(x float64) float64 {
+	return 1.0 / (1.0 + math.Exp(-x))
 }
 
+// sigmoidPrime implements the derivative
+// of the sigmoid function for backpropagation.
+func sigmoidPrime(x float64) float64 {
+	return sigmoid(x) * (1.0 - sigmoid(x))
+}
+
+// sumAlongAxis sums a matrix along a
+// particular dimension, preserving the
+// other dimension.
 func sumAlongAxis(axis int, m *mat.Dense) (*mat.Dense, error) {
 
 	numRows, numCols := m.Dims()
@@ -280,59 +290,64 @@ func sumAlongAxis(axis int, m *mat.Dense) (*mat.Dense, error) {
 	return output, nil
 }
 
-func main() {
-
-	// Form the training matrices.
-	inputs, labels := makeInputsAndLabels("data/train.csv")
-
-	// Define our network architecture and learning parameters.
-	config := neuralNetConfig{
-		inputNeurons:  4,
-		outputNeurons: 3,
-		hiddenNeurons: 3,
-		numEpochs:     5000,
-		learningRate:  0.3,
-	}
-
-	// Train the neural network.
-	network := newNetwork(config)
-	if err := network.train(inputs, labels); err != nil {
+func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
+	// Open the dataset file.
+	f, err := os.Open(fileName)
+	if err != nil {
 		log.Fatal(err)
 	}
+	defer f.Close()
 
-	// Form the testing matrices.
-	testInputs, testLabels := makeInputsAndLabels("data/test.csv")
+	// Create a new CSV reader reading from the opened file.
+	reader := csv.NewReader(f)
+	reader.FieldsPerRecord = 7
 
-	// Make the predictions using the trained model.
-	predictions, err := network.predict(testInputs)
+	// Read in all of the CSV records
+	rawCSVData, err := reader.ReadAll()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Calculate the accuracy of our model.
-	var truePosNeg int
-	numPreds, _ := predictions.Dims()
-	for i := 0; i < numPreds; i++ {
+	// inputsData and labelsData will hold all the
+	// float values that will eventually be
+	// used to form matrices.
+	inputsData := make([]float64, 4*len(rawCSVData))
+	labelsData := make([]float64, 3*len(rawCSVData))
 
-		// Get the label.
-		labelRow := mat.Row(nil, i, testLabels)
-		var prediction int
-		for idx, label := range labelRow {
-			if label == 1.0 {
-				prediction = idx
-				break
-			}
+	// Will track the current index of matrix values.
+	var inputsIndex int
+	var labelsIndex int
+
+	// Sequentially move the rows into a slice of floats.
+	for idx, record := range rawCSVData {
+
+		// Skip the header row.
+		if idx == 0 {
+			continue
 		}
 
-		// Accumulate the true positive/negative count.
-		if predictions.At(i, prediction) == floats.Max(mat.Row(nil, i, predictions)) {
-			truePosNeg++
+		// Loop over the float columns.
+		for i, val := range record {
+
+			// Convert the value to a float.
+			parsedVal, err := strconv.ParseFloat(val, 64)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// Add to the labelsData if relevant.
+			if i == 4 || i == 5 || i == 6 {
+				labelsData[labelsIndex] = parsedVal
+				labelsIndex++
+				continue
+			}
+
+			// Add the float value to the slice of floats.
+			inputsData[inputsIndex] = parsedVal
+			inputsIndex++
 		}
 	}
-
-	// Calculate the accuracy (subset accuracy).
-	accuracy := float64(truePosNeg) / float64(numPreds)
-
-	// Output the Accuracy value to standard out.
-	fmt.Printf("\nAccuracy = %0.2f\n\n", accuracy)
+	inputs := mat.NewDense(len(rawCSVData), 4, inputsData)
+	labels := mat.NewDense(len(rawCSVData), 3, labelsData)
+	return inputs, labels
 }
