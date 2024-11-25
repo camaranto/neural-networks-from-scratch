@@ -38,12 +38,12 @@ type neuralNetConfig struct {
 func main() {
 
 	// Form the training matrices.
-	inputs, labels := makeInputsAndLabels("data/train.csv")
+	inputs, labels := makeInputsAndLabels("data/breast-cancer/train.csv")
 
 	// Define our network architecture and learning parameters.
 	config := neuralNetConfig{
-		inputNeurons:  4,
-		outputNeurons: 3,
+		inputNeurons:  10,
+		outputNeurons: 2,
 		hiddenNeurons: 3,
 		numEpochs:     5000,
 		learningRate:  0.3,
@@ -56,7 +56,7 @@ func main() {
 	}
 
 	// Form the testing matrices.
-	testInputs, testLabels := makeInputsAndLabels("data/test.csv")
+	testInputs, testLabels := makeInputsAndLabels("data/breast-cancer/test.csv")
 
 	// Make the predictions using the trained model.
 	predictions, err := network.predict(testInputs)
@@ -300,7 +300,7 @@ func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
 
 	// Create a new CSV reader reading from the opened file.
 	reader := csv.NewReader(f)
-	reader.FieldsPerRecord = 7
+	reader.FieldsPerRecord = 12
 
 	// Read in all of the CSV records
 	rawCSVData, err := reader.ReadAll()
@@ -311,8 +311,8 @@ func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
 	// inputsData and labelsData will hold all the
 	// float values that will eventually be
 	// used to form matrices.
-	inputsData := make([]float64, 4*len(rawCSVData))
-	labelsData := make([]float64, 3*len(rawCSVData))
+	inputsData := make([]float64, 10*len(rawCSVData))
+	labelsData := make([]float64, 2*len(rawCSVData))
 
 	// Will track the current index of matrix values.
 	var inputsIndex int
@@ -336,7 +336,7 @@ func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
 			}
 
 			// Add to the labelsData if relevant.
-			if i == 4 || i == 5 || i == 6 {
+			if i == 10 || i == 11 {
 				labelsData[labelsIndex] = parsedVal
 				labelsIndex++
 				continue
@@ -347,7 +347,7 @@ func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
 			inputsIndex++
 		}
 	}
-	inputs := mat.NewDense(len(rawCSVData), 4, inputsData)
-	labels := mat.NewDense(len(rawCSVData), 3, labelsData)
+	inputs := mat.NewDense(len(rawCSVData), 10, inputsData)
+	labels := mat.NewDense(len(rawCSVData), 2, labelsData)
 	return inputs, labels
 }
