@@ -13,7 +13,15 @@ import (
 
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
+	"gopkg.in/yaml.v3"
 )
+
+type dataConfig struct {
+	containsHeader bool  `yaml:"contains-header"`
+	inputs         []int `yaml:"inputs"`
+	labels         []int `yaml:"labels"`
+	numRecords     int   `yaml:"num-records"`
+}
 
 // neuralNet contains all of the information
 // that defines a trained neural network.
@@ -28,35 +36,28 @@ type neuralNet struct {
 // neuralNetConfig defines our neural network
 // architecture and learning parameters.
 type neuralNetConfig struct {
-	inputNeurons  int
-	outputNeurons int
-	hiddenNeurons int
-	numEpochs     int
-	learningRate  float64
+	inputNeurons  int     `yaml:"input-neurons"`
+	outputNeurons int     `yaml:"output-neurons"`
+	hiddenNeurons int     `yaml:"hidden-neurons"`
+	numEpochs     int     `yaml:"num-epochs"`
+	learningRate  float64 `yaml:"learning-rate"`
 }
 
 func main() {
 
-	// Form the training matrices.
-	inputs, labels := makeInputsAndLabels("data/breast-cancer/train.csv")
+	configData, configNeuralNet := readConfigFiles("data/breast-cancer/data.config", "data/breast-cancer/model.config")
 
-	// Define our network architecture and learning parameters.
-	config := neuralNetConfig{
-		inputNeurons:  10,
-		outputNeurons: 2,
-		hiddenNeurons: 3,
-		numEpochs:     5000,
-		learningRate:  0.3,
-	}
+	// Form the training matrices.
+	inputs, labels := makeInputsAndLabels("data/breast-cancer/train.csv", configData)
 
 	// Train the neural network.
-	network := newNetwork(config)
+	network := newNetwork(configNeuralNet)
 	if err := network.train(inputs, labels); err != nil {
 		log.Fatal(err)
 	}
 
 	// Form the testing matrices.
-	testInputs, testLabels := makeInputsAndLabels("data/breast-cancer/test.csv")
+	testInputs, testLabels := makeInputsAndLabels("data/breast-cancer/test.csv", configData)
 
 	// Make the predictions using the trained model.
 	predictions, err := network.predict(testInputs)
@@ -290,7 +291,7 @@ func sumAlongAxis(axis int, m *mat.Dense) (*mat.Dense, error) {
 	return output, nil
 }
 
-func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
+func makeInputsAndLabels(fileName string, configData dataConfig) (*mat.Dense, *mat.Dense) {
 	// Open the dataset file.
 	f, err := os.Open(fileName)
 	if err != nil {
@@ -300,7 +301,7 @@ func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
 
 	// Create a new CSV reader reading from the opened file.
 	reader := csv.NewReader(f)
-	reader.FieldsPerRecord = 12
+	reader.FieldsPerRecord = configData.numRecords
 
 	// Read in all of the CSV records
 	rawCSVData, err := reader.ReadAll()
@@ -311,18 +312,22 @@ func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
 	// inputsData and labelsData will hold all the
 	// float values that will eventually be
 	// used to form matrices.
-	inputsData := make([]float64, 10*len(rawCSVData))
-	labelsData := make([]float64, 2*len(rawCSVData))
+	inputsData := make([]float64, len(configData.inputs)*len(rawCSVData))
+	labelsData := make([]float64, len(configData.labels)*len(rawCSVData))
 
 	// Will track the current index of matrix values.
 	var inputsIndex int
 	var labelsIndex int
 
+	inputSet := make(map[int]struct{})
+	for _, num := range configData.inputs {
+		inputSet[num] = struct{}{}
+	}
 	// Sequentially move the rows into a slice of floats.
 	for idx, record := range rawCSVData {
 
 		// Skip the header row.
-		if idx == 0 {
+		if configData.containsHeader && idx == 0 {
 			continue
 		}
 
@@ -336,7 +341,7 @@ func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
 			}
 
 			// Add to the labelsData if relevant.
-			if i == 10 || i == 11 {
+			if _, exists := inputSet[i]; exists {
 				labelsData[labelsIndex] = parsedVal
 				labelsIndex++
 				continue
@@ -347,7 +352,36 @@ func makeInputsAndLabels(fileName string) (*mat.Dense, *mat.Dense) {
 			inputsIndex++
 		}
 	}
-	inputs := mat.NewDense(len(rawCSVData), 10, inputsData)
-	labels := mat.NewDense(len(rawCSVData), 2, labelsData)
+	inputs := mat.NewDense(len(rawCSVData), len(configData.inputs), inputsData)
+	labels := mat.NewDense(len(rawCSVData), len(configData.labels), labelsData)
 	return inputs, labels
+}
+
+func readConfigFiles(dataConfigFilename string, neuralNetConfigFilename string) (dataConfig, neuralNetConfig) {
+	configData, err := readYAML[dataConfig](dataConfigFilename)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	configNeuralNet, err := readYAML[neuralNetConfig](neuralNetConfigFilename)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return *configData, *configNeuralNet
+
+}
+
+func readYAML[T any](filename string) (*T, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var result T
+	err = yaml.Unmarshal(data, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
